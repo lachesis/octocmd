@@ -4,7 +4,7 @@ import os
 import re
 import sys
 import logging
-import httplib
+import http.client
 import inspect
 import argparse
 import requests
@@ -31,7 +31,7 @@ def configure_logger(name=None, debug=False):
             import http.client as http_client
         except ImportError:
             # Python 2
-            import httplib as http_client
+            import http.client as http_client
             http_client.HTTPConnection.debuglevel = 1
 
 
@@ -69,7 +69,7 @@ class TransformPipeline(object):
     def _scan_for_processors(self, processors):
         processors = processors or list()
         if not processors:
-            for (name, cls) in globals().items():
+            for (name, cls) in list(globals().items()):
                 if cls in (PrintProcess, PrintCommand):
                     continue
                 if not (inspect.isclass(cls) and issubclass(cls, PrintProcess)):
@@ -97,15 +97,15 @@ class TransformPipeline(object):
     def run_pipeline(self, pipeline, **kw):
         for (method, inputfn, outputfn) in pipeline:
             method(inputfn, outputfn, **kw)
-            if method.im_self.stale(inputfn, outputfn):
+            if method.__self__.stale(inputfn, outputfn):
                 msg = "%s -> %s failed (stale)" % (inputfn, outputfn)
-                raise RuntimeError, msg
+                raise RuntimeError(msg)
 
     def transform(self, inputfn, outputfn, **kw):
         outputfn = outputfn
         pipeline = self.get_pipeline(inputfn, outputfn)
         if not pipeline:
-            raise RuntimeError, "Could not transform %s -> %s" % (inputfn, outputfn)
+            raise RuntimeError("Could not transform %s -> %s" % (inputfn, outputfn))
         self.run_pipeline(pipeline, **kw)
 
 class PrintProcess(object):
@@ -147,7 +147,7 @@ class PrintCommand(PrintProcess):
             hint = hint or self.Command
             self.CommandPath = which(hint)
         if not self.CommandPath:
-            print "Could not find %s" % hint
+            print("Could not find %s" % hint)
         return self.CommandPath
 
     def stale(self, inputfn, outputfn):
@@ -254,7 +254,7 @@ class OctoPrint_API(PrintProcess):
         failure = (res.status_code != code)
         if failure:
             if error:
-                raise RuntimeError, res.text
+                raise RuntimeError(res.text)
             msg = "response code=%s: %s" % (res.status_code, res.text)
             logger.debug(msg)
             return None
@@ -359,12 +359,12 @@ def load_config(fn, error=True):
     except:
         if error:
             msg = "Missing config, please run '%s init' first" % sys.argv[0]
-            raise RuntimeError, msg
+            raise RuntimeError(msg)
     return {}
 
 def save_config(fn, config):
     msg = "Saving config file to '%s'" % fn
-    print msg
+    print(msg)
     fh = open(fn, 'w')
     fh.write(json.dumps(config, sort_keys=True, indent=4))
 
@@ -439,7 +439,7 @@ def process_eta(args):
 
     js = jres['progress']
 
-    print('{0:.2f}% complete - ETA {1}'.format(js['completion'], human_time(js['printTimeLeft'])))
+    print(('{0:.2f}% complete - ETA {1}'.format(js['completion'], human_time(js['printTimeLeft']))))
 
 def process_status(args):
     op = OctoPrint_API(**args.__dict__)
@@ -461,7 +461,7 @@ def process_status(args):
                 rpt += '%s%s: ' % (header(level), key)
                 if "text" in obj[key]:
                     rpt += '%s\n' % obj[key]["text"]
-                elif any([type(i) == dict for i in val.values()]):
+                elif any([type(i) == dict for i in list(val.values())]):
                     rpt += '\n'
                 rpt += format_status(val, level + 1)
                 vals = []
@@ -474,8 +474,8 @@ def process_status(args):
             rpt += str.join(', ', vals[1:]) + '\n'
         return rpt
 
-    print format_status(res)
-    print format_status(jres)
+    print(format_status(res))
+    print(format_status(jres))
 
 def process_init(args):
     def test_config(config):
@@ -487,10 +487,10 @@ def process_init(args):
     complete = False
     while not complete:
         msg = "OctoPrint URL%s: " % ("[%(OctoPrint_URL)s]" % cache if 'OctoPrint_URL' in cache else '')
-        url = raw_input(msg)
+        url = input(msg)
         url = url or cache.get("OctoPrint_URL", None)
         msg = "OctoPrint API Key%s: " % ("[%(OctoAPI_KEY)s]" % cache if 'OctoAPI_KEY' in cache else '')
-        apikey = raw_input(msg)
+        apikey = input(msg)
         apikey = apikey or cache.get("OctoAPI_KEY", None)
         cache = {"OctoAPI_KEY": apikey, "OctoPrint_URL": url}
         if test_config(cache):
@@ -499,7 +499,7 @@ def process_init(args):
         else:
             question = "This configuration does not work, keep it? [y/N]: "
             default_answer = 'n'
-        answer = raw_input(question).strip() or default_answer
+        answer = input(question).strip() or default_answer
         complete = len(answer) and (answer[0].lower() == 'y')
     save_config(args.config, cache)
 
