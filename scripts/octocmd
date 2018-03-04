@@ -390,9 +390,13 @@ def get_cli():
 
     # create the parser for the "status" command
     sp = subparsers.add_parser('status', help='printer status')
+    sp.add_argument('--short', action='store_true', help='Print a short status')
 
     # create the parser for the "eta" command
     sp = subparsers.add_parser('eta', help='printer eta')
+    sp.add_argument('--eta-only', action='store_true', help='Only print ETA')
+    sp.add_argument('--percent-only', action='store_true', help='Only print percent')
+    sp.add_argument('--short', action='store_true', help='Print short form')
 
     # create the parser for the "print" command
     sp = subparsers.add_parser('print', help='print a file')
@@ -439,12 +443,26 @@ def process_eta(args):
 
     js = jres['progress']
 
-    print(('{0:.2f}% complete - ETA {1}'.format(js['completion'], human_time(js['printTimeLeft']))))
+    if args.eta_only:
+        print(human_time(js['printTimeLeft']))
+    elif args.percent_only:
+        print("{0:.2f}".format(js['completion']))
+    elif args.short:
+        print("{0:.2f}% ({1})".format(js['completion'], human_time(js['printTimeLeft'])))
+    else:
+        print(('{0:.2f}% complete - ETA {1}'.format(js['completion'], human_time(js['printTimeLeft']))))
 
 def process_status(args):
     op = OctoPrint_API(**args.__dict__)
-    res = op.get_state(error=True)
-    jres = op.get_job_state(error=True)
+    try:
+        res = op.get_state(error=True)
+        jres = op.get_job_state(error=True)
+    except RuntimeError:
+        if args.short:
+            print("<offline>")
+            return
+        else:
+            raise
 
     def format_status(obj, level=0):
         def header(level):
@@ -474,8 +492,30 @@ def process_status(args):
             rpt += str.join(', ', vals[1:]) + '\n'
         return rpt
 
-    print(format_status(res))
-    print(format_status(jres))
+    if args.short:
+        s = ''
+
+        try:
+            s += u'E:{0}\u00B0C'.format(res['temperature']['tool0']['actual'])
+        except Exception:
+            pass
+
+        try:
+            s += u' B:{0}\u00B0C'.format(res['temperature']['bed']['actual'])
+        except Exception:
+            pass
+
+        if res['state']['flags']['printing']:
+            s += ' [{}]'.format(os.path.splitext(jres['job']['file']['name'])[0])
+            s += ' ({0:.2f}% / ETA {1})'.format(jres['progress']['completion'], human_time(jres['progress']['printTimeLeft']))
+        elif res['state']['flags']['operational']:
+            s += ' [idle]'
+        else:
+            s += ' [{res[state][text]}??]'.format(res=res)
+        print(s)
+    else:
+        print(format_status(res))
+        print(format_status(jres))
 
 def process_init(args):
     def test_config(config):
@@ -520,13 +560,13 @@ def process(args):
     if args.mode == "status":
         args.config = load_config(args.config)
         process_status(args)
-    if args.mode == "eta":
+    elif args.mode == "eta":
         args.config = load_config(args.config)
         process_eta(args)
     elif args.mode in ("print", "upload", "select"):
         args.config = load_config(args.config)
         process_target(args)
-    elif args.mode in ("init"):
+    elif args.mode in ("init",):
         process_init(args)
 
 if __name__ == "__main__":
